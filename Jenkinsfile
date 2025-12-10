@@ -1,25 +1,41 @@
 pipeline {
+
     agent any
 
-    stages {
-        stage('Checkout'){
-            steps {
-              git url: 'https://github.com/steeltars/vat-calculator.git',
-                  branch: 'main'
+    environment {
+        dockerCreds = credentials('dockerhub_login')
+        registry = "${dockerCreds_USR}/vatcal"
+        registryCredentials = "dockerhub_login"
+        dockerImage = "" // empty var, will be written to later
+    }
 
+    stages {
+        stage('Run Tests') {
+            steps {
+               npm 'install'
+               npm 'test'
             }
         }
-        stage('Build') {
+        stage('Build Image') {
             steps {
-              npm 'install'
-              npm 'run build'
-
-           }
+                script {
+                    dockerImage = docker.build(registry)
+                }
+            }
         }
-        stage('Archive') {
+        stage('Push Image') {
             steps {
-              sh 'tar -czf build.tar.gz build'
-              archiveArtifacts 'build.tar.gz'
+                script {
+                    docker.withRegistry("", registryCredentials) {
+                        dockerImage.push("${env.BUILD_NUMBER}")
+                        dockerImage.push("latest")
+                    }
+                }
+            }
+        }
+        stage('Clean Up') {
+            steps {
+                sh "docker image prune --all --force --filter 'until=48h'"
             }
         }
     }
